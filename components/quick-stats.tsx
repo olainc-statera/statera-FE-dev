@@ -28,7 +28,7 @@ export function MoodSelector({ selectedMood, onMoodChange }: MoodSelectorProps) 
             How are you feeling today?
           </h2>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            {"We'll tailor classes to match your energy."}
+            {""}
           </p>
         </div>
         {selectedMood && (
