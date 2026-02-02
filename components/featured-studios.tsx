@@ -28,7 +28,7 @@ export function FeaturedStudios({ mood }: FeaturedStudiosProps) {
     });
 
   return (
-    <section className="py-4 sm:py-6">
+    <section className="sm:py-6 py-8">
       <div className="flex items-center justify-between px-3 sm:px-4 mb-3 sm:mb-4">
         <div className="min-w-0 flex-1">
           <h2 className="text-base sm:text-lg font-semibold text-foreground font-[family-name:var(--font-display)]">
