@@ -1,9 +1,9 @@
 "use client";
 
-import { use, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import {
   ArrowLeft,
   Heart,
@@ -132,12 +132,8 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
-export default function ClassDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
+export default function ClassDetailPage() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(false);
   const [showBookingDialog, setShowBookingDialog] = useState(false);
