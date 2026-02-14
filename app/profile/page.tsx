@@ -326,14 +326,14 @@ export default function ProfilePage() {
 
         {/* Category Selection Modal */}
         <Dialog open={categoryModalOpen} onOpenChange={setCategoryModalOpen}>
-          <DialogContent className="max-w-sm">
+          <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-sm max-h-[80vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Favorite Categories</DialogTitle>
               <DialogDescription>
                 Select the categories you enjoy most
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4 space-y-2">
+            <div className="flex-1 overflow-y-auto py-2 space-y-2">
               {categories.map((cat) => {
                 const isSelected = userCategories.includes(cat.id);
                 return (
@@ -356,7 +356,7 @@ export default function ProfilePage() {
                 );
               })}
             </div>
-            <Button className="w-full" onClick={() => setCategoryModalOpen(false)}>
+            <Button className="w-full shrink-0" onClick={() => setCategoryModalOpen(false)}>
               Done
             </Button>
           </DialogContent>
