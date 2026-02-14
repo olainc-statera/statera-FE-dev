@@ -58,8 +58,7 @@ const amenities = [
   "Parking Available",
 ];
 
-export default function StudioDetailPage({
-) {
+export default function StudioDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(false);
