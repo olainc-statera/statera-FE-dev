@@ -155,9 +155,6 @@ export default function StudioDetailPage({
                 </Badge>
               );
             })}
-            <span className="ml-auto text-sm font-medium text-muted-foreground">
-              {studio.priceRange} price range
-            </span>
           </div>
 
           <p className="text-sm text-muted-foreground leading-relaxed">
