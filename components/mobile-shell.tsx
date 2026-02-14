@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -36,26 +35,12 @@ export function MobileShell({ children, variant = "user" }: MobileShellProps) {
   const navItems = variant === "studio" ? studioNavItems : userNavItems;
 
   return (
-    <div className="relative flex flex-col min-h-screen">
-      {/* Blurred background image */}
-      <div className="fixed inset-0 overflow-hidden" style={{ zIndex: -1 }}>
-        <Image
-          src="/bg-pattern.jpg"
-          alt=""
-          fill
-          className="object-cover scale-125"
-          style={{ filter: 'blur(60px)' }}
-          priority
-          quality={60}
-        />
-        <div className="absolute inset-0 bg-white/40" />
-      </div>
-
+    <div className="flex flex-col min-h-screen bg-background">
       {/* Main content */}
-      <main className="relative flex-1 pb-20 overflow-y-auto">{children}</main>
+      <main className="flex-1 pb-20 overflow-y-auto">{children}</main>
 
       {/* Bottom navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card/90 backdrop-blur-xl border-t border-border z-50">
+      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50">
         <div className="flex items-center justify-around px-2 py-2 max-w-lg mx-auto">
           {navItems.map((item) => {
             const isActive =

@@ -1,9 +1,9 @@
 "use client";
 
-import { use, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import {
   ArrowLeft,
   Heart,
@@ -58,12 +58,8 @@ const amenities = [
   "Parking Available",
 ];
 
-export default function StudioDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
+export default function StudioDetailPage() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(false);
 
@@ -158,9 +154,6 @@ export default function StudioDetailPage({
                 </Badge>
               );
             })}
-            <span className="ml-auto text-sm font-medium text-muted-foreground">
-              {studio.priceRange} price range
-            </span>
           </div>
 
           <p className="text-sm text-muted-foreground leading-relaxed">

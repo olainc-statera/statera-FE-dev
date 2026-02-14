@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import { MobileShell } from "@/components/mobile-shell";
 import {
-  Settings,
   ChevronRight,
   Heart,
   Calendar,
@@ -36,12 +35,17 @@ import {
 } from "@/components/ui/dialog";
 import { currentUser, categories } from "@/lib/data";
 
-const menuItems = [
+const menuItems: {
+  icon: typeof Heart;
+  label: string;
+  href: string;
+  badge?: string;
+  external?: boolean;
+}[] = [
   {
     icon: Heart,
-    label: "Favorite Studios",
+    label: "Favorites",
     href: "/profile/favorites",
-    badge: "5",
   },
   {
     icon: Calendar,
@@ -61,7 +65,8 @@ const menuItems = [
   {
     icon: HelpCircle,
     label: "Help & Support",
-    href: "/profile/support",
+    href: "https://www.statera.live",
+    external: true,
   },
 ];
 
@@ -89,6 +94,14 @@ export default function ProfilePage() {
   const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [userCategories, setUserCategories] = useState<string[]>(currentUser.favoriteCategories);
+
+  const toggleFavoriteCategory = (catId: string) => {
+    setUserCategories((prev) =>
+      prev.includes(catId) ? prev.filter((c) => c !== catId) : [...prev, catId]
+    );
+  };
 
   const handlePurchase = async () => {
     if (!selectedPackage) return;
@@ -106,9 +119,6 @@ export default function ProfilePage() {
           <h1 className="text-xl font-bold text-foreground font-[family-name:var(--font-display)]">
             Profile
           </h1>
-          <Button variant="ghost" size="icon">
-            <Settings className="w-5 h-5" />
-          </Button>
         </div>
       </header>
 
@@ -296,7 +306,7 @@ export default function ProfilePage() {
             Favorite Categories
           </h3>
           <div className="flex flex-wrap gap-2">
-            {currentUser.favoriteCategories.map((catId) => {
+            {userCategories.map((catId) => {
               const cat = categories.find((c) => c.id === catId);
               return (
                 <Badge key={catId} variant="secondary" className="text-sm">
@@ -304,34 +314,82 @@ export default function ProfilePage() {
                 </Badge>
               );
             })}
-            <Badge variant="outline" className="text-sm cursor-pointer">
+            <Badge
+              variant="outline"
+              className="text-sm cursor-pointer bg-transparent"
+              onClick={() => setCategoryModalOpen(true)}
+            >
               + Add
             </Badge>
           </div>
         </div>
 
+        {/* Category Selection Modal */}
+        <Dialog open={categoryModalOpen} onOpenChange={setCategoryModalOpen}>
+          <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-sm max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>Favorite Categories</DialogTitle>
+              <DialogDescription>
+                Select the categories you enjoy most
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto py-2 space-y-2">
+              {categories.map((cat) => {
+                const isSelected = userCategories.includes(cat.id);
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => toggleFavoriteCategory(cat.id)}
+                    className={`w-full flex items-center justify-between p-3 rounded-lg border transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/40"
+                    }`}
+                  >
+                    <span className="text-sm font-medium text-foreground">{cat.name}</span>
+                    {isSelected && (
+                      <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                        <Check className="w-3.5 h-3.5 text-primary-foreground" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <Button className="w-full shrink-0" onClick={() => setCategoryModalOpen(false)}>
+              Done
+            </Button>
+          </DialogContent>
+        </Dialog>
+
         {/* Menu Items */}
         <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
-          {menuItems.map((item, index) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={`flex items-center gap-3 p-4 hover:bg-muted/50 transition-colors ${
-                index !== menuItems.length - 1 ? "border-b border-border" : ""
-              }`}
-            >
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                <item.icon className="w-5 h-5 text-muted-foreground" />
-              </div>
-              <span className="flex-1 text-foreground">{item.label}</span>
-              {item.badge && (
-                <Badge variant="secondary" className="text-xs">
-                  {item.badge}
-                </Badge>
-              )}
-              <ChevronRight className="w-5 h-5 text-muted-foreground" />
-            </Link>
-          ))}
+          {menuItems.map((item, index) => {
+            const linkProps = item.external
+              ? { href: item.href, target: "_blank" as const, rel: "noopener noreferrer" as const }
+              : { href: item.href };
+
+            return (
+              <Link
+                key={item.label}
+                {...linkProps}
+                className={`flex items-center gap-3 p-4 hover:bg-muted/50 transition-colors ${
+                  index !== menuItems.length - 1 ? "border-b border-border" : ""
+                }`}
+              >
+                <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                  <item.icon className="w-5 h-5 text-muted-foreground" />
+                </div>
+                <span className="flex-1 text-foreground">{item.label}</span>
+                {item.badge && (
+                  <Badge variant="secondary" className="text-xs">
+                    {item.badge}
+                  </Badge>
+                )}
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              </Link>
+            );
+          })}
         </div>
 
         {/* Notifications Toggle */}
@@ -354,23 +412,6 @@ export default function ProfilePage() {
             />
           </div>
         </div>
-
-        {/* Studio Dashboard Link */}
-        <Link href="/studio">
-          <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-foreground">
-                  Are you a studio owner?
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Access your studio dashboard
-                </p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-primary" />
-            </div>
-          </div>
-        </Link>
 
         {/* Logout */}
         <Button variant="outline" className="w-full text-destructive hover:text-destructive bg-transparent">

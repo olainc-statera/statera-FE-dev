@@ -5,36 +5,18 @@ import Link from "next/link";
 import { Star, MapPin, ChevronRight } from "lucide-react";
 import { studios } from "@/lib/data";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { getMoodConfig, type MoodType } from "@/lib/mood-config";
 
-interface FeaturedStudiosProps {
-  mood: MoodType;
-}
-
-export function FeaturedStudios({ mood }: FeaturedStudiosProps) {
-  const config = getMoodConfig(mood);
-  
-  // Sort studios based on mood - prioritize those with matching categories
-  const featuredStudios = [...studios]
-    .filter((s) => s.featured)
-    .sort((a, b) => {
-      if (mood) {
-        const aMatches = a.categories.filter(c => config.recommendedCategories.includes(c)).length;
-        const bMatches = b.categories.filter(c => config.recommendedCategories.includes(c)).length;
-        return bMatches - aMatches;
-      }
-      return 0;
-    });
+export function FeaturedStudios() {
+  const featuredStudios = studios.filter((s) => s.featured);
 
   return (
-    <section className="py-4 sm:py-6">
+    <section className="sm:py-6 py-8">
       <div className="flex items-center justify-between px-3 sm:px-4 mb-3 sm:mb-4">
         <div className="min-w-0 flex-1">
           <h2 className="text-base sm:text-lg font-semibold text-foreground font-[family-name:var(--font-display)]">
             Featured Studios
           </h2>
-          <p className="text-xs sm:text-sm text-muted-foreground truncate">{config.studioSubtitle}</p>
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">Top-rated in your area</p>
         </div>
         <Link
           href="/explore"
@@ -62,9 +44,6 @@ export function FeaturedStudios({ mood }: FeaturedStudiosProps) {
                   sizes="(max-width: 640px) 224px, (max-width: 768px) 256px, 288px"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
-                <Badge className="absolute top-2 left-2 sm:top-3 sm:left-3 bg-primary text-primary-foreground text-[10px] sm:text-xs">
-                  Featured
-                </Badge>
                 <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3">
                   <h3 className="text-sm sm:text-base font-semibold text-foreground truncate">
                     {studio.name}

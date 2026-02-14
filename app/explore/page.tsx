@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, MapPin, X } from "lucide-react";
 import { MobileShell } from "@/components/mobile-shell";
 import { Input } from "@/components/ui/input";
@@ -18,18 +19,53 @@ import {
 } from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { moods } from "@/components/quick-stats";
+import { getMoodConfig, type MoodType } from "@/lib/mood-config";
 
 export default function ExplorePage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const moodParam = searchParams.get("mood") as MoodType;
+
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"studios" | "classes">("classes");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedMood, setSelectedMood] = useState<MoodType>(moodParam);
   const [priceRange, setPriceRange] = useState([0, 50]);
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // Apply mood-based category filters when mood changes
+  useEffect(() => {
+    if (moodParam) {
+      setSelectedMood(moodParam);
+      const config = getMoodConfig(moodParam);
+      setSelectedCategories(config.recommendedCategories);
+    }
+  }, [moodParam]);
 
   const toggleCategory = (id: string) => {
     setSelectedCategories((prev) =>
       prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]
     );
+  };
+
+  const toggleMood = (moodId: MoodType) => {
+    if (selectedMood === moodId) {
+      setSelectedMood(null);
+      setSelectedCategories([]);
+      router.push("/explore");
+    } else {
+      setSelectedMood(moodId);
+      const config = getMoodConfig(moodId);
+      setSelectedCategories(config.recommendedCategories);
+      router.push(`/explore?mood=${moodId}`);
+    }
+  };
+
+  const clearMood = () => {
+    setSelectedMood(null);
+    setSelectedCategories([]);
+    router.push("/explore");
   };
 
   const filteredClasses = classes.filter((c) => {
@@ -81,11 +117,32 @@ export default function ExplorePage() {
                 <SlidersHorizontal className="w-4 h-4" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="bottom" className="h-[70vh] rounded-t-2xl">
+            <SheetContent side="bottom" className="h-[80vh] rounded-t-2xl">
               <SheetHeader>
                 <SheetTitle>Filters</SheetTitle>
               </SheetHeader>
-              <div className="py-6 space-y-6">
+              <div className="py-6 space-y-6 overflow-y-auto">
+                {/* Mood Filter */}
+                <div>
+                  <h3 className="font-medium mb-3">Mood</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {moods.map((mood) => {
+                      const Icon = mood.icon;
+                      return (
+                        <Badge
+                          key={mood.id}
+                          variant={selectedMood === mood.id ? "default" : "outline"}
+                          className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5"
+                          onClick={() => toggleMood(mood.id as MoodType)}
+                        >
+                          {mood.label}
+                          <Icon className="w-3.5 h-3.5" strokeWidth={1.5} />
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Categories */}
                 <div>
                   <h3 className="font-medium mb-3">Categories</h3>
@@ -162,8 +219,18 @@ export default function ExplorePage() {
         </div>
 
         {/* Active Filters */}
-        {selectedCategories.length > 0 && (
-          <div className="flex items-center gap-2 mt-3 overflow-x-auto">
+        {(selectedMood || selectedCategories.length > 0) && (
+          <div className="flex items-center gap-2 mt-3 overflow-x-auto scrollbar-none" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            {selectedMood && (
+              <Badge
+                variant="default"
+                className="shrink-0 cursor-pointer"
+                onClick={clearMood}
+              >
+                {moods.find((m) => m.id === selectedMood)?.label}
+                <X className="w-3 h-3 ml-1" />
+              </Badge>
+            )}
             {selectedCategories.map((catId) => {
               const cat = categories.find((c) => c.id === catId);
               return (
@@ -179,7 +246,7 @@ export default function ExplorePage() {
               );
             })}
             <button
-              onClick={() => setSelectedCategories([])}
+              onClick={clearMood}
               className="text-xs text-muted-foreground shrink-0"
             >
               Clear all
