@@ -395,7 +395,7 @@ export default function PaymentPage() {
               </div>
             </div>
           </div>
-          <DialogFooter className="flex-col gap-2">
+          <div className="flex flex-col gap-2 pt-2">
             <Button
               className="w-full"
               onClick={handleAddCard}
@@ -407,7 +407,7 @@ export default function PaymentPage() {
               <Lock className="w-3 h-3" />
               <span>256-bit SSL encryption</span>
             </div>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
