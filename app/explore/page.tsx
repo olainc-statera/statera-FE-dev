@@ -220,7 +220,7 @@ export default function ExplorePage() {
 
         {/* Active Filters */}
         {(selectedMood || selectedCategories.length > 0) && (
-          <div className="flex items-center gap-2 mt-3 overflow-x-auto">
+          <div className="flex items-center gap-2 mt-3 overflow-x-auto scrollbar-none" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
             {selectedMood && (
               <Badge
                 variant="default"
