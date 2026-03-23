@@ -1,15 +1,30 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ChevronRight, Sparkles } from "lucide-react";
-import { classes } from "@/lib/data";
 import { ClassCard } from "@/components/class-card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { searchClasses } from "@/lib/api/classes";
+import { classes as mockClasses } from "@/lib/data";
+import type { FitnessClass } from "@/lib/types";
 
 export function UpcomingClasses() {
-  const upcomingClasses = [...classes]
-    .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime())
-    .slice(0, 6);
+  const [displayClasses, setDisplayClasses] = useState<FitnessClass[]>(
+    [...mockClasses]
+      .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime())
+      .slice(0, 6)
+  );
+
+  useEffect(() => {
+    searchClasses({ limit: 6, sortBy: 'startTime', availableOnly: true })
+      .then(({ classes }) => {
+        if (classes.length > 0) setDisplayClasses(classes);
+      })
+      .catch(() => {
+        // Keep mock data on error
+      });
+  }, []);
 
   return (
     <section className="py-4 sm:py-6">
@@ -34,7 +49,7 @@ export function UpcomingClasses() {
 
       <ScrollArea className="w-full whitespace-nowrap">
         <div className="flex gap-3 sm:gap-4 px-3 sm:px-4 pb-2">
-          {upcomingClasses.map((fitnessClass) => (
+          {displayClasses.map((fitnessClass) => (
             <div key={fitnessClass.id} className="shrink-0 w-52 sm:w-56 md:w-64">
               <ClassCard fitnessClass={fitnessClass} />
             </div>

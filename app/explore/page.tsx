@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, MapPin, X } from "lucide-react";
 import { MobileShell } from "@/components/mobile-shell";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StudioCard } from "@/components/studio-card";
 import { ClassCard } from "@/components/class-card";
-import { studios, classes, categories } from "@/lib/data";
+import { categories } from "@/lib/data";
 import {
   Sheet,
   SheetContent,
@@ -21,6 +21,21 @@ import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { moods } from "@/components/quick-stats";
 import { getMoodConfig, type MoodType } from "@/lib/mood-config";
+import { searchClasses } from "@/lib/api/classes";
+import { searchStudios } from "@/lib/api/studios";
+import type { FitnessClass, Studio } from "@/lib/types";
+
+// Modality mapping: frontend category id → backend enum
+const CATEGORY_TO_MODALITY: Record<string, string> = {
+  yoga: 'YOGA',
+  pilates: 'PILATES',
+  hiit: 'HIIT',
+  cycling: 'SPIN',
+  boxing: 'BOXING',
+  barre: 'BARRE',
+  strength: 'STRENGTH',
+  dance: 'DANCE',
+};
 
 export default function ExplorePage() {
   const searchParams = useSearchParams();
@@ -34,6 +49,14 @@ export default function ExplorePage() {
   const [priceRange, setPriceRange] = useState([0, 50]);
   const [filterOpen, setFilterOpen] = useState(false);
 
+  const [apiClasses, setApiClasses] = useState<FitnessClass[]>([]);
+  const [isLoadingClasses, setIsLoadingClasses] = useState(false);
+  const [totalClasses, setTotalClasses] = useState(0);
+
+  const [apiStudios, setApiStudios] = useState<Studio[]>([]);
+  const [isLoadingStudios, setIsLoadingStudios] = useState(false);
+  const [totalStudios, setTotalStudios] = useState(0);
+
   // Apply mood-based category filters when mood changes
   useEffect(() => {
     if (moodParam) {
@@ -42,6 +65,67 @@ export default function ExplorePage() {
       setSelectedCategories(config.recommendedCategories);
     }
   }, [moodParam]);
+
+  // Fetch classes from API
+  const fetchClasses = useCallback(async () => {
+    setIsLoadingClasses(true);
+    try {
+      const modalities = selectedCategories
+        .map((c) => CATEGORY_TO_MODALITY[c])
+        .filter(Boolean);
+
+      // If multiple modalities selected, we fetch each and merge (API supports one at a time)
+      // For simplicity, use the first selected modality or no filter
+      const params = {
+        query: searchQuery || undefined,
+        modality: modalities.length === 1 ? modalities[0] : undefined,
+        minCredits: priceRange[0] > 0 ? priceRange[0] : undefined,
+        maxCredits: priceRange[1] < 50 ? priceRange[1] : undefined,
+        limit: 50,
+        availableOnly: true,
+      };
+
+      const { classes, pagination } = await searchClasses(params);
+
+      // Client-side filter for multi-modality when API only supports one
+      const filtered =
+        modalities.length > 1
+          ? classes.filter((c) => selectedCategories.includes(c.category))
+          : classes;
+
+      setApiClasses(filtered);
+      setTotalClasses(modalities.length > 1 ? filtered.length : pagination.total);
+    } catch {
+      setApiClasses([]);
+    } finally {
+      setIsLoadingClasses(false);
+    }
+  }, [searchQuery, selectedCategories, priceRange]);
+
+  useEffect(() => {
+    fetchClasses();
+  }, [fetchClasses]);
+
+  // Fetch studios from API
+  const fetchStudios = useCallback(async () => {
+    setIsLoadingStudios(true);
+    try {
+      const { studios, total } = await searchStudios({
+        query: searchQuery || undefined,
+        limit: 50,
+      });
+      setApiStudios(studios);
+      setTotalStudios(total);
+    } catch {
+      setApiStudios([]);
+    } finally {
+      setIsLoadingStudios(false);
+    }
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (viewMode === "studios") fetchStudios();
+  }, [fetchStudios, viewMode]);
 
   const toggleCategory = (id: string) => {
     setSelectedCategories((prev) =>
@@ -68,26 +152,6 @@ export default function ExplorePage() {
     router.push("/explore");
   };
 
-  const filteredClasses = classes.filter((c) => {
-    const matchesSearch =
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.studioName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory =
-      selectedCategories.length === 0 ||
-      selectedCategories.includes(c.category);
-    const matchesPrice = c.price >= priceRange[0] && c.price <= priceRange[1];
-    return matchesSearch && matchesCategory && matchesPrice;
-  });
-
-  const filteredStudios = studios.filter((s) => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.location.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory =
-      selectedCategories.length === 0 ||
-      s.categories.some((cat) => selectedCategories.includes(cat));
-    return matchesSearch && matchesCategory;
-  });
 
   return (
     <MobileShell>
@@ -259,25 +323,39 @@ export default function ExplorePage() {
       <div className="px-4 py-4">
         <p className="text-sm text-muted-foreground mb-4">
           {viewMode === "classes"
-            ? `${filteredClasses.length} classes found`
-            : `${filteredStudios.length} studios found`}
+            ? isLoadingClasses
+              ? "Searching..."
+              : `${totalClasses} classes found`
+            : isLoadingStudios
+            ? "Searching..."
+            : `${totalStudios} studios found`}
         </p>
 
         {viewMode === "classes" ? (
           <div className="space-y-3">
-            {filteredClasses.map((fitnessClass) => (
+            {apiClasses.map((fitnessClass) => (
               <ClassCard
                 key={fitnessClass.id}
                 fitnessClass={fitnessClass}
                 variant="horizontal"
               />
             ))}
+            {!isLoadingClasses && apiClasses.length === 0 && (
+              <p className="text-center text-muted-foreground py-12 text-sm">
+                No classes found. Try adjusting your filters.
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredStudios.map((studio) => (
+            {apiStudios.map((studio) => (
               <StudioCard key={studio.id} studio={studio} />
             ))}
+            {!isLoadingStudios && apiStudios.length === 0 && (
+              <p className="text-center text-muted-foreground py-12 text-sm">
+                No studios found. Try a different search.
+              </p>
+            )}
           </div>
         )}
       </div>

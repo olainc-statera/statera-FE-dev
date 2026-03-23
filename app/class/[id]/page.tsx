@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
@@ -24,7 +24,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
-import { classes, studios } from "@/lib/data";
 import {
   Dialog,
   DialogContent,
@@ -34,86 +33,13 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
-
-// Instructor details keyed by name
-const instructorDetails: Record<
-  string,
-  { bio: string; certifications: string[]; yearsExp: number; classCount: number }
-> = {
-  "Maya Chen": {
-    bio: "Maya discovered yoga during a trip to Bali and never looked back. She blends traditional vinyasa with modern movement science to create classes that challenge and restore in equal measure.",
-    certifications: ["RYT-500", "Prenatal Yoga", "Yin Yoga"],
-    yearsExp: 8,
-    classCount: 1240,
-  },
-  "Marcus Johnson": {
-    bio: "Former competitive cyclist turned studio instructor. Marcus brings infectious energy and expertly curated playlists to every ride, pushing you beyond what you thought possible.",
-    certifications: ["Schwinn Certified", "NASM-CPT", "Precision Nutrition L1"],
-    yearsExp: 6,
-    classCount: 980,
-  },
-  "Tony Rivera": {
-    bio: "Tony trained as an amateur boxer before transitioning to coaching. He believes boxing is for everyone and focuses on proper technique, mental toughness, and having fun.",
-    certifications: ["USA Boxing Coach", "ACE-CPT", "First Aid/CPR"],
-    yearsExp: 10,
-    classCount: 1560,
-  },
-  "Sophia Laurent": {
-    bio: "Classically trained ballet dancer with a passion for functional fitness. Sophia's barre classes fuse grace and grit for sculpted results.",
-    certifications: ["Barre Above Certified", "Pilates Mat", "NASM-CES"],
-    yearsExp: 7,
-    classCount: 890,
-  },
-  "Jake Torres": {
-    bio: "Jake is a high-intensity specialist who thrives on pushing limits. His sessions are tough but rewarding, designed to maximize calorie burn and build endurance.",
-    certifications: ["NSCA-CSCS", "CrossFit L2", "TRX Certified"],
-    yearsExp: 5,
-    classCount: 720,
-  },
-  "Elena Woods": {
-    bio: "Elena's approach to yoga is deeply restorative. She creates a warm, welcoming space where students can slow down and reconnect with themselves.",
-    certifications: ["RYT-200", "Restorative Yoga", "Meditation Teacher"],
-    yearsExp: 4,
-    classCount: 540,
-  },
-};
-
-// Studio addresses keyed by studio id
-const studioAddresses: Record<string, string> = {
-  "1": "142 Mercer St, New York, NY 10012",
-  "2": "88 Franklin St, New York, NY 10013",
-  "3": "210 W 23rd St, New York, NY 10011",
-  "4": "785 Lexington Ave, New York, NY 10065",
-  "5": "345 Bedford Ave, Brooklyn, NY 11249",
-};
-
-// Mock reviews
-const mockReviews = [
-  {
-    id: "r1",
-    user: { name: "Anna P.", avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80" },
-    rating: 5,
-    content: "Absolutely loved this class! The instructor was incredibly attentive and the energy in the room was amazing. Will definitely be back.",
-    date: "2 days ago",
-    helpful: 12,
-  },
-  {
-    id: "r2",
-    user: { name: "Chris M.", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80" },
-    rating: 4,
-    content: "Great workout and well-paced. The studio is beautiful and clean. Only wish the class was a bit longer.",
-    date: "1 week ago",
-    helpful: 8,
-  },
-  {
-    id: "r3",
-    user: { name: "Taylor R.", avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80" },
-    rating: 5,
-    content: "This is my new favorite class. The instructor really knows how to motivate you while keeping everything safe and accessible.",
-    date: "2 weeks ago",
-    helpful: 15,
-  },
-];
+import { getClass } from "@/lib/api/classes";
+import { createBooking } from "@/lib/api/bookings";
+import { getReviews, markReviewHelpful, type BackendReview } from "@/lib/api/reviews";
+import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api-client";
+import type { FitnessClass } from "@/lib/types";
+import type { BackendClassDetail } from "@/lib/api/classes";
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -122,9 +48,7 @@ function StarRating({ rating }: { rating: number }) {
         <Star
           key={star}
           className={`w-3.5 h-3.5 ${
-            star <= rating
-              ? "fill-primary text-primary"
-              : "text-border"
+            star <= rating ? "fill-primary text-primary" : "text-border"
           }`}
         />
       ))}
@@ -135,17 +59,51 @@ function StarRating({ rating }: { rating: number }) {
 export default function ClassDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { user, updateUser } = useAuth();
+
+  const [fitnessClass, setFitnessClass] = useState<FitnessClass | null>(null);
+  const [rawClass, setRawClass] = useState<BackendClassDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+
+  const [reviews, setReviews] = useState<BackendReview[]>([]);
+
   const [isFavorite, setIsFavorite] = useState(false);
   const [showBookingDialog, setShowBookingDialog] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [isBooked, setIsBooked] = useState(false);
+  const [bookingError, setBookingError] = useState("");
 
-  const fitnessClass = classes.find((c) => c.id === id);
-  const studio = fitnessClass
-    ? studios.find((s) => s.id === fitnessClass.studioId)
-    : null;
+  useEffect(() => {
+    if (!id) return;
+    Promise.all([
+      getClass(id),
+      getReviews({ classId: id, limit: 20, sortBy: "createdAt" }),
+    ])
+      .then(([{ mapped, raw }, fetchedReviews]) => {
+        setFitnessClass(mapped);
+        setRawClass(raw);
+        setReviews(fetchedReviews);
+      })
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 404) {
+          setNotFound(true);
+        } else {
+          setNotFound(true);
+        }
+      })
+      .finally(() => setIsLoading(false));
+  }, [id]);
 
-  if (!fitnessClass || !studio) {
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-muted-foreground text-sm">Loading class...</p>
+      </div>
+    );
+  }
+
+  if (notFound || !fitnessClass || !rawClass) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <p className="text-muted-foreground">Class not found</p>
@@ -153,14 +111,13 @@ export default function ClassDetailPage() {
     );
   }
 
-  const instructor = instructorDetails[fitnessClass.instructor] || {
-    bio: "Passionate instructor dedicated to helping you reach your fitness goals.",
-    certifications: ["Certified Instructor"],
-    yearsExp: 3,
-    classCount: 300,
-  };
+  const studio = rawClass.studio;
+  const instructor = rawClass.instructor;
 
-  const studioAddress = studioAddresses[fitnessClass.studioId] || studio.location;
+  const studioAddress = studio
+    ? `${studio.address}, ${studio.city}, ${studio.state}`
+    : fitnessClass.studioName;
+
   const mapQuery = encodeURIComponent(studioAddress);
 
   const dateStr = new Date(fitnessClass.datetime).toLocaleDateString("en-US", {
@@ -168,7 +125,6 @@ export default function ClassDetailPage() {
     month: "short",
     day: "numeric",
   });
-
   const timeStr = new Date(fitnessClass.datetime).toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -176,19 +132,32 @@ export default function ClassDetailPage() {
   });
 
   const spotsPercentage =
-    ((fitnessClass.totalSpots - fitnessClass.spotsLeft) /
-      fitnessClass.totalSpots) *
-    100;
+    ((fitnessClass.totalSpots - fitnessClass.spotsLeft) / fitnessClass.totalSpots) * 100;
 
   const studioShare = Math.round(fitnessClass.price * 0.7);
-  const averageRating = 4.7;
-  const totalReviews = studio.reviewCount;
+  const reviewCount = rawClass._count?.reviews ?? 0;
 
   const handleBook = async () => {
+    if (!user) {
+      router.push("/login");
+      return;
+    }
     setIsBooking(true);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setIsBooking(false);
-    setIsBooked(true);
+    setBookingError("");
+    try {
+      const result = await createBooking(fitnessClass.id);
+      setIsBooked(true);
+      setShowBookingDialog(false);
+      updateUser({ creditBalance: result.creditBalance });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setBookingError(err.message);
+      } else {
+        setBookingError("Failed to book class. Please try again.");
+      }
+    } finally {
+      setIsBooking(false);
+    }
   };
 
   return (
@@ -201,6 +170,7 @@ export default function ClassDetailPage() {
           fill
           className="object-cover"
           priority
+          unoptimized
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
 
@@ -235,7 +205,6 @@ export default function ClassDetailPage() {
           </div>
         </div>
 
-        {/* Difficulty Badge */}
         <Badge className="absolute bottom-4 left-4 bg-card/80 backdrop-blur-sm text-foreground border border-border">
           {fitnessClass.difficulty}
         </Badge>
@@ -249,19 +218,13 @@ export default function ClassDetailPage() {
             <h1 className="text-xl sm:text-2xl font-bold text-foreground font-[family-name:var(--font-display)] text-balance">
               {fitnessClass.name}
             </h1>
-            <Link
-              href={`/studio/${studio.id}`}
-              className="text-sm text-primary hover:underline"
-            >
-              {studio.name}
-            </Link>
+            {studio && (
+              <Link href={`/studio/${studio.id}`} className="text-sm text-primary hover:underline">
+                {studio.name}
+              </Link>
+            )}
           </div>
           <div className="text-right shrink-0">
-            {fitnessClass.originalPrice && (
-              <p className="text-xs text-muted-foreground line-through">
-                {fitnessClass.originalPrice} credits
-              </p>
-            )}
             <p className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-1">
               <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
               {fitnessClass.price}
@@ -280,10 +243,12 @@ export default function ClassDetailPage() {
             <Clock className="w-3.5 h-3.5 text-primary" />
             {timeStr} · {fitnessClass.duration}min
           </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs text-muted-foreground">
-            <Star className="w-3.5 h-3.5 fill-primary text-primary" />
-            {averageRating} ({totalReviews})
-          </div>
+          {reviewCount > 0 && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card border border-border text-xs text-muted-foreground">
+              <Star className="w-3.5 h-3.5 fill-primary text-primary" />
+              {reviewCount} reviews
+            </div>
+          )}
         </div>
 
         {/* Description */}
@@ -292,13 +257,15 @@ export default function ClassDetailPage() {
           <p className="text-sm text-muted-foreground leading-relaxed">
             {fitnessClass.description}
           </p>
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {fitnessClass.tags.map((tag) => (
-              <Badge key={tag} variant="secondary" className="text-[10px] sm:text-xs font-normal">
-                {tag}
-              </Badge>
-            ))}
-          </div>
+          {fitnessClass.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {fitnessClass.tags.map((tag) => (
+                <Badge key={tag} variant="secondary" className="text-[10px] sm:text-xs font-normal">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Spots Availability */}
@@ -313,11 +280,14 @@ export default function ClassDetailPage() {
             </span>
           </div>
           <Progress value={spotsPercentage} className="h-2" />
-          {fitnessClass.spotsLeft <= 5 && (
+          {fitnessClass.spotsLeft <= 5 && fitnessClass.spotsLeft > 0 && (
             <p className="text-xs text-destructive mt-2 flex items-center gap-1">
               <Zap className="w-3 h-3" />
               Filling up fast! Book now to secure your spot.
             </p>
+          )}
+          {fitnessClass.spotsLeft === 0 && (
+            <p className="text-xs text-destructive mt-2">Class is full.</p>
           )}
         </div>
 
@@ -328,153 +298,135 @@ export default function ClassDetailPage() {
             <p className="text-sm font-medium text-foreground">Credit Transparency</p>
             <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
               Of your {fitnessClass.price} credits, {studioShare} credits (70%) go directly to{" "}
-              <span className="font-medium text-foreground">{studio.name}</span>. The remainder supports platform operations and booking services.
+              <span className="font-medium text-foreground">{fitnessClass.studioName}</span>. The
+              remainder supports platform operations and booking services.
             </p>
           </div>
         </div>
 
         {/* Studio Info and Map */}
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="p-3 sm:p-4">
-            <h3 className="text-sm font-semibold text-foreground mb-3">Studio Location</h3>
-            <Link
-              href={`/studio/${studio.id}`}
-              className="flex items-center gap-3 mb-3"
-            >
-              <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0">
-                <Image
-                  src={studio.image || "/placeholder.svg"}
-                  alt={studio.name}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground">{studio.name}</p>
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  {studioAddress}
-                </p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-            </Link>
+        {studio && (
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="p-3 sm:p-4">
+              <h3 className="text-sm font-semibold text-foreground mb-3">Studio Location</h3>
+              <Link href={`/studio/${studio.id}`} className="flex items-center gap-3 mb-3">
+                <div className="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-muted">
+                  {studio.logo && (
+                    <Image src={studio.logo} alt={studio.name} fill className="object-cover" unoptimized />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-foreground">{studio.name}</p>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {studioAddress}
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              </Link>
+            </div>
+            <div className="relative w-full h-36 sm:h-44 bg-muted">
+              <iframe
+                title={`Map of ${studio.name}`}
+                src={`https://www.google.com/maps?q=${mapQuery}&output=embed`}
+                className="w-full h-full border-0"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
           </div>
-          {/* Map embed */}
-          <div className="relative w-full h-36 sm:h-44 bg-muted">
-            <iframe
-              title={`Map of ${studio.name}`}
-              src={`https://www.google.com/maps?q=${mapQuery}&output=embed`}
-              className="w-full h-full border-0"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-            />
-          </div>
-        </div>
+        )}
 
         {/* Instructor Profile */}
-        <div className="bg-card border border-border rounded-xl p-3 sm:p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Your Instructor</h3>
-          <div className="flex items-start gap-3 mb-3">
-            <Avatar className="w-14 h-14 sm:w-16 sm:h-16 ring-2 ring-border">
-              <AvatarImage
-                src={fitnessClass.instructorImage || "/placeholder.svg"}
-                alt={fitnessClass.instructor}
-              />
-              <AvatarFallback>{fitnessClass.instructor.charAt(0)}</AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-foreground">{fitnessClass.instructor}</p>
-              <p className="text-xs text-muted-foreground">
-                {instructor.yearsExp} years experience · {instructor.classCount}+ classes taught
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {instructor.certifications.map((cert) => (
-                  <Badge key={cert} variant="outline" className="text-[10px] sm:text-xs font-normal flex items-center gap-1">
-                    <Award className="w-2.5 h-2.5" />
-                    {cert}
-                  </Badge>
-                ))}
+        {instructor && (
+          <div className="bg-card border border-border rounded-xl p-3 sm:p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3">Your Instructor</h3>
+            <div className="flex items-start gap-3 mb-3">
+              <Avatar className="w-14 h-14 sm:w-16 sm:h-16 ring-2 ring-border">
+                <AvatarImage
+                  src={instructor.photo || "/placeholder.svg"}
+                  alt={`${instructor.firstName} ${instructor.lastName}`}
+                />
+                <AvatarFallback>{instructor.firstName.charAt(0)}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-foreground">
+                  {instructor.firstName} {instructor.lastName}
+                </p>
+                <p className="text-sm text-muted-foreground leading-relaxed mt-1">
+                  {instructor.bio ?? "Passionate instructor dedicated to helping you reach your fitness goals."}
+                </p>
               </div>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {instructor.bio}
-          </p>
-        </div>
+        )}
 
-        {/* Reviews and Ratings */}
+        {/* Reviews */}
         <div className="bg-card border border-border rounded-xl p-3 sm:p-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-foreground">Reviews</h3>
-            <div className="flex items-center gap-1.5">
-              <Star className="w-4 h-4 fill-primary text-primary" />
-              <span className="text-sm font-semibold text-foreground">{averageRating}</span>
-              <span className="text-xs text-muted-foreground">({totalReviews} reviews)</span>
-            </div>
+            {reviewCount > 0 && (
+              <span className="text-xs text-muted-foreground">({reviewCount} total)</span>
+            )}
           </div>
 
-          {/* Rating Breakdown */}
-          <div className="space-y-1.5 mb-4">
-            {[
-              { stars: 5, pct: 72 },
-              { stars: 4, pct: 18 },
-              { stars: 3, pct: 7 },
-              { stars: 2, pct: 2 },
-              { stars: 1, pct: 1 },
-            ].map((row) => (
-              <div key={row.stars} className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground w-3 text-right">{row.stars}</span>
-                <Star className="w-3 h-3 fill-primary text-primary" />
-                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full"
-                    style={{ width: `${row.pct}%` }}
-                  />
-                </div>
-                <span className="text-[10px] text-muted-foreground w-8 text-right">{row.pct}%</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Individual Reviews */}
-          <div className="space-y-4">
-            {mockReviews.map((review) => (
-              <div key={review.id} className="border-t border-border pt-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="w-7 h-7">
-                      <AvatarImage src={review.user.avatar} alt={review.user.name} />
-                      <AvatarFallback>{review.user.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <span className="text-xs font-medium text-foreground">{review.user.name}</span>
+          {reviews.length > 0 ? (
+            <div className="space-y-4">
+              {reviews.map((review) => (
+                <div key={review.id} className="border-t border-border pt-3 first:border-0 first:pt-0">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="w-7 h-7">
+                        <AvatarImage src={review.user.avatar ?? "/placeholder.svg"} alt={`${review.user.firstName} ${review.user.lastName}`} />
+                        <AvatarFallback>{review.user.firstName.charAt(0)}</AvatarFallback>
+                      </Avatar>
+                      <span className="text-xs font-medium text-foreground">
+                        {review.user.firstName} {review.user.lastName}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(review.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground">{review.date}</span>
+                  <StarRating rating={review.rating} />
+                  {review.comment && (
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-1.5">
+                      {review.comment}
+                    </p>
+                  )}
+                  {review.studioResponse && (
+                    <div className="mt-2 p-2 rounded bg-primary/5 border border-primary/10">
+                      <p className="text-[10px] font-medium text-foreground">Studio Response</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{review.studioResponse}</p>
+                    </div>
+                  )}
+                  <button
+                    className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() =>
+                      markReviewHelpful(review.id).then(() =>
+                        setReviews((prev) =>
+                          prev.map((r) => r.id === review.id ? { ...r, helpful: r.helpful + 1 } : r)
+                        )
+                      )
+                    }
+                  >
+                    <ThumbsUp className="w-3 h-3" />
+                    Helpful ({review.helpful})
+                  </button>
                 </div>
-                <StarRating rating={review.rating} />
-                <p className="text-xs text-muted-foreground leading-relaxed mt-1.5">
-                  {review.content}
-                </p>
-                <button className="flex items-center gap-1 mt-2 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
-                  <ThumbsUp className="w-3 h-3" />
-                  Helpful ({review.helpful})
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <Button variant="ghost" className="w-full mt-3 text-xs text-primary">
-            View all {totalReviews} reviews
-          </Button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No reviews yet.</p>
+          )}
         </div>
 
         {/* Cancellation Policy */}
         <div className="bg-muted rounded-xl p-3 sm:p-4">
-          <h3 className="text-sm font-medium text-foreground mb-1">
-            Cancellation Policy
-          </h3>
+          <h3 className="text-sm font-medium text-foreground mb-1">Cancellation Policy</h3>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Free cancellation up to 12 hours before class. Late cancellations or
-            no-shows will be charged the full credit amount. Credits will be refunded to your account within 24 hours of a valid cancellation.
+            Free cancellation up to 12 hours before class. 50% refund between 2–12 hours.
+            No refund within 2 hours. Credits are returned to your account automatically.
           </p>
         </div>
       </div>
@@ -484,14 +436,11 @@ export default function ClassDetailPage() {
         <div className="flex items-center justify-between mb-2.5">
           <div>
             <p className="text-xs text-muted-foreground">{dateStr}</p>
-            <p className="text-sm font-medium text-foreground">{timeStr} · {fitnessClass.duration}min</p>
+            <p className="text-sm font-medium text-foreground">
+              {timeStr} · {fitnessClass.duration}min
+            </p>
           </div>
           <div className="text-right">
-            {fitnessClass.originalPrice && (
-              <p className="text-xs text-muted-foreground line-through">
-                {fitnessClass.originalPrice} credits
-              </p>
-            )}
             <p className="text-lg font-bold text-foreground flex items-center gap-1 justify-end">
               <Coins className="w-4 h-4 text-primary" />
               {fitnessClass.price} credits
@@ -504,16 +453,21 @@ export default function ClassDetailPage() {
             <Button
               className="w-full"
               size="lg"
-              disabled={isBooked}
+              disabled={isBooked || fitnessClass.spotsLeft === 0}
             >
-              {isBooked ? "Booked!" : `Book Now · ${fitnessClass.price} credits`}
+              {isBooked
+                ? "Booked!"
+                : fitnessClass.spotsLeft === 0
+                ? "Class Full"
+                : `Book Now · ${fitnessClass.price} credits`}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Confirm Booking</DialogTitle>
               <DialogDescription>
-                {"You're about to book"} {fitnessClass.name} at {studio.name}
+                {"You're about to book"} {fitnessClass.name}
+                {studio ? ` at ${studio.name}` : ""}
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-3">
@@ -531,10 +485,14 @@ export default function ClassDetailPage() {
                 <span className="text-muted-foreground">Duration</span>
                 <span className="font-medium text-foreground">{fitnessClass.duration} minutes</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Location</span>
-                <span className="font-medium text-foreground">{studioAddress}</span>
-              </div>
+              {studio && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Location</span>
+                  <span className="font-medium text-foreground text-right max-w-[60%]">
+                    {studioAddress}
+                  </span>
+                </div>
+              )}
               <div className="border-t border-border pt-3 flex justify-between">
                 <span className="font-semibold text-foreground">Total</span>
                 <span className="font-bold text-foreground flex items-center gap-1">
@@ -543,20 +501,25 @@ export default function ClassDetailPage() {
                 </span>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                {studioShare} credits (70%) go directly to {studio.name}
+                {studioShare} credits (70%) go directly to {fitnessClass.studioName}
               </p>
+              {user && (
+                <p className="text-xs text-muted-foreground">
+                  Your balance: {user.creditBalance} credits →{" "}
+                  {user.creditBalance - fitnessClass.price} after booking
+                </p>
+              )}
+              {bookingError && (
+                <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+                  {bookingError}
+                </p>
+              )}
             </div>
             <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setShowBookingDialog(false)}
-              >
+              <Button variant="outline" onClick={() => setShowBookingDialog(false)}>
                 Cancel
               </Button>
-              <Button
-                onClick={handleBook}
-                disabled={isBooking}
-              >
+              <Button onClick={handleBook} disabled={isBooking}>
                 {isBooking ? "Booking..." : "Confirm Booking"}
               </Button>
             </DialogFooter>

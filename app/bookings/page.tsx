@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import Image from "next/image";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { MobileShell } from "@/components/mobile-shell";
 import {
   Calendar,
   Clock,
-  MapPin,
   ChevronRight,
   CheckCircle2,
   XCircle,
@@ -26,64 +24,77 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { classes, studios } from "@/lib/data";
-
-const bookings = [
-  {
-    id: "1",
-    classId: "1",
-    status: "upcoming" as const,
-    bookedAt: "2026-01-30T10:00:00",
-  },
-  {
-    id: "2",
-    classId: "2",
-    status: "upcoming" as const,
-    bookedAt: "2026-01-29T14:00:00",
-  },
-  {
-    id: "3",
-    classId: "3",
-    status: "completed" as const,
-    bookedAt: "2026-01-20T09:00:00",
-  },
-  {
-    id: "4",
-    classId: "4",
-    status: "completed" as const,
-    bookedAt: "2026-01-18T11:00:00",
-  },
-  {
-    id: "5",
-    classId: "5",
-    status: "cancelled" as const,
-    bookedAt: "2026-01-15T08:00:00",
-  },
-];
+import { getUpcomingBookings, getPastBookings, cancelBooking } from "@/lib/api/bookings";
+import { useAuth } from "@/lib/auth-context";
+import type { MappedBooking } from "@/lib/api/bookings";
 
 export default function BookingsPage() {
+  const { user, updateUser, isLoading: authLoading } = useAuth();
+
+  const [upcomingBookings, setUpcomingBookings] = useState<MappedBooking[]>([]);
+  const [pastBookings, setPastBookings] = useState<MappedBooking[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [qrBookingId, setQrBookingId] = useState<string | null>(null);
 
-  const upcomingBookings = bookings.filter((b) => b.status === "upcoming");
-  const pastBookings = bookings.filter(
-    (b) => b.status === "completed" || b.status === "cancelled"
-  );
+  useEffect(() => {
+    if (authLoading || !user) return;
 
-  const handleCancelBooking = () => {
-    // Handle cancellation logic
-    setCancelDialogOpen(false);
-    setSelectedBookingId(null);
+    Promise.all([getUpcomingBookings(), getPastBookings()])
+      .then(([upcoming, past]) => {
+        setUpcomingBookings(upcoming);
+        setPastBookings(past);
+      })
+      .catch(() => {
+        // Keep empty on error
+      })
+      .finally(() => setIsLoading(false));
+  }, [authLoading, user]);
+
+  const handleCancelBooking = async () => {
+    if (!selectedBookingId) return;
+    setIsCancelling(true);
+    setCancelError("");
+
+    try {
+      const result = await cancelBooking(selectedBookingId);
+      setUpcomingBookings((prev) =>
+        prev.filter((b) => b.id !== selectedBookingId)
+      );
+      setPastBookings((prev) => [
+        { ...prev.find((b) => b.id === selectedBookingId)!, status: "cancelled" },
+        ...prev,
+      ]);
+      updateUser({ creditBalance: result.creditBalance });
+      setCancelDialogOpen(false);
+      setSelectedBookingId(null);
+    } catch {
+      setCancelError("Failed to cancel. Please try again.");
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
-  const getClassDetails = (classId: string) => {
-    const fitnessClass = classes.find((c) => c.id === classId);
-    const studio = fitnessClass
-      ? studios.find((s) => s.id === fitnessClass.studioId)
-      : null;
-    return { fitnessClass, studio };
-  };
+  if (!authLoading && !user) {
+    return (
+      <MobileShell>
+        <div className="flex flex-col items-center justify-center py-24 px-4 text-center">
+          <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-foreground mb-2">Sign in to view bookings</h3>
+          <Link href="/login">
+            <Button>Sign In</Button>
+          </Link>
+        </div>
+      </MobileShell>
+    );
+  }
+
+  const selectedBooking = upcomingBookings.find((b) => b.id === selectedBookingId);
 
   return (
     <MobileShell>
@@ -91,9 +102,7 @@ export default function BookingsPage() {
         <h1 className="text-xl font-bold text-foreground font-[family-name:var(--font-display)]">
           My Bookings
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your classes and reservations
-        </p>
+        <p className="text-sm text-muted-foreground">Manage your classes and reservations</p>
       </header>
 
       <Tabs defaultValue="upcoming" className="w-full px-4 py-4">
@@ -105,12 +114,12 @@ export default function BookingsPage() {
         </TabsList>
 
         <TabsContent value="upcoming" className="space-y-4">
-          {upcomingBookings.length === 0 ? (
+          {isLoading ? (
+            <p className="text-center text-sm text-muted-foreground py-8">Loading...</p>
+          ) : upcomingBookings.length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                No upcoming classes
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">No upcoming classes</h3>
               <p className="text-sm text-muted-foreground mb-4">
                 Book a class to start your fitness journey
               </p>
@@ -120,41 +129,27 @@ export default function BookingsPage() {
             </div>
           ) : (
             upcomingBookings.map((booking) => {
-              const { fitnessClass, studio } = getClassDetails(booking.classId);
-              if (!fitnessClass || !studio) return null;
-
-              const dateStr = new Date(fitnessClass.datetime).toLocaleDateString(
-                "en-US",
-                { weekday: "short", month: "short", day: "numeric" }
-              );
-              const timeStr = new Date(fitnessClass.datetime).toLocaleTimeString(
-                "en-US",
-                { hour: "numeric", minute: "2-digit", hour12: true }
-              );
+              const dateStr = new Date(booking.datetime).toLocaleDateString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              });
+              const timeStr = new Date(booking.datetime).toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+              });
 
               return (
-                <div
-                  key={booking.id}
-                  className="bg-card border border-border rounded-xl overflow-hidden"
-                >
+                <div key={booking.id} className="bg-card border border-border rounded-xl overflow-hidden">
                   <div className="flex gap-4 p-4">
-                    <div className="relative w-20 h-20 rounded-lg overflow-hidden shrink-0">
-                      <Image
-                        src={fitnessClass.image || "/placeholder.svg"}
-                        alt={fitnessClass.name}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
                     <div className="flex-1 min-w-0">
-                      <Link href={`/class/${fitnessClass.id}`}>
+                      <Link href={`/class/${booking.classId}`}>
                         <h3 className="font-semibold text-foreground hover:text-primary truncate">
-                          {fitnessClass.name}
+                          {booking.className}
                         </h3>
                       </Link>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {studio.name}
-                      </p>
+                      <p className="text-sm text-muted-foreground truncate">{booking.studioName}</p>
                       <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -167,10 +162,23 @@ export default function BookingsPage() {
                       </div>
                     </div>
                   </div>
+
                   <div className="flex items-center gap-2 px-4 pb-4">
-                    <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+                    {/* Check-in QR */}
+                    <Dialog
+                      open={qrDialogOpen && qrBookingId === booking.id}
+                      onOpenChange={(open) => {
+                        setQrDialogOpen(open);
+                        if (!open) setQrBookingId(null);
+                      }}
+                    >
                       <DialogTrigger asChild>
-                        <Button variant="default" size="sm" className="flex-1">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => setQrBookingId(booking.id)}
+                        >
                           <QrCode className="w-4 h-4 mr-2" />
                           Check-in QR
                         </Button>
@@ -184,30 +192,26 @@ export default function BookingsPage() {
                         </DialogHeader>
                         <div className="flex flex-col items-center py-6">
                           <div className="w-48 h-48 bg-foreground rounded-xl flex items-center justify-center mb-4">
-                            <div className="w-40 h-40 bg-background rounded-lg grid grid-cols-5 gap-1 p-2">
-                              {[...Array(25)].map((_, i) => (
-                                <div
-                                  key={i}
-                                  className={`rounded-sm ${
-                                    Math.random() > 0.5
-                                      ? "bg-foreground"
-                                      : "bg-transparent"
-                                  }`}
-                                />
-                              ))}
+                            <div className="w-40 h-40 bg-background rounded-lg flex items-center justify-center">
+                              <p className="text-xs text-foreground font-mono text-center px-2 break-all">
+                                {booking.checkInCode}
+                              </p>
                             </div>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            Booking #{booking.id.toUpperCase()}
+                            Booking #{booking.id.slice(-8).toUpperCase()}
                           </p>
                         </div>
                       </DialogContent>
                     </Dialog>
+
+                    {/* Cancel */}
                     <Dialog
                       open={cancelDialogOpen && selectedBookingId === booking.id}
                       onOpenChange={(open) => {
                         setCancelDialogOpen(open);
                         if (!open) setSelectedBookingId(null);
+                        setCancelError("");
                       }}
                     >
                       <DialogTrigger asChild>
@@ -224,23 +228,36 @@ export default function BookingsPage() {
                         <DialogHeader>
                           <DialogTitle>Cancel Booking</DialogTitle>
                           <DialogDescription>
-                            Are you sure you want to cancel this class? This action
-                            cannot be undone.
+                            Are you sure you want to cancel this class?
                           </DialogDescription>
                         </DialogHeader>
                         <div className="py-4">
-                          <div className="bg-muted rounded-lg p-3 text-sm">
-                            <p className="font-medium text-foreground">
-                              {fitnessClass.name}
-                            </p>
-                            <p className="text-muted-foreground">
-                              {dateStr} at {timeStr}
-                            </p>
-                          </div>
+                          {selectedBooking && (
+                            <div className="bg-muted rounded-lg p-3 text-sm">
+                              <p className="font-medium text-foreground">
+                                {selectedBooking.className}
+                              </p>
+                              <p className="text-muted-foreground">
+                                {new Date(selectedBooking.datetime).toLocaleDateString("en-US", {
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                })}{" "}
+                                at{" "}
+                                {new Date(selectedBooking.datetime).toLocaleTimeString("en-US", {
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                  hour12: true,
+                                })}
+                              </p>
+                            </div>
+                          )}
                           <p className="text-xs text-muted-foreground mt-3">
-                            Free cancellation applies as this is more than 12 hours
-                            before the class.
+                            Refund policy: Full refund &gt;12h before, 50% between 2–12h, none &lt;2h.
                           </p>
+                          {cancelError && (
+                            <p className="text-sm text-destructive mt-2">{cancelError}</p>
+                          )}
                         </div>
                         <DialogFooter>
                           <Button
@@ -252,8 +269,9 @@ export default function BookingsPage() {
                           <Button
                             variant="destructive"
                             onClick={handleCancelBooking}
+                            disabled={isCancelling}
                           >
-                            Yes, Cancel
+                            {isCancelling ? "Cancelling..." : "Yes, Cancel"}
                           </Button>
                         </DialogFooter>
                       </DialogContent>
@@ -266,25 +284,23 @@ export default function BookingsPage() {
         </TabsContent>
 
         <TabsContent value="past" className="space-y-4">
-          {pastBookings.length === 0 ? (
+          {isLoading ? (
+            <p className="text-center text-sm text-muted-foreground py-8">Loading...</p>
+          ) : pastBookings.length === 0 ? (
             <div className="text-center py-12">
               <CheckCircle2 className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                No past classes
-              </h3>
+              <h3 className="text-lg font-semibold text-foreground mb-2">No past classes</h3>
               <p className="text-sm text-muted-foreground">
                 Your completed classes will appear here
               </p>
             </div>
           ) : (
             pastBookings.map((booking) => {
-              const { fitnessClass, studio } = getClassDetails(booking.classId);
-              if (!fitnessClass || !studio) return null;
-
-              const dateStr = new Date(fitnessClass.datetime).toLocaleDateString(
-                "en-US",
-                { weekday: "short", month: "short", day: "numeric" }
-              );
+              const dateStr = new Date(booking.datetime).toLocaleDateString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              });
 
               return (
                 <div
@@ -295,48 +311,32 @@ export default function BookingsPage() {
                   )}
                 >
                   <div className="flex gap-4 p-4">
-                    <div className="relative w-16 h-16 rounded-lg overflow-hidden shrink-0">
-                      <Image
-                        src={fitnessClass.image || "/placeholder.svg"}
-                        alt={fitnessClass.name}
-                        fill
-                        className="object-cover"
-                      />
-                      {booking.status === "cancelled" && (
-                        <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
-                          <XCircle className="w-6 h-6 text-destructive" />
-                        </div>
-                      )}
-                    </div>
+                    {booking.status === "cancelled" && (
+                      <div className="flex items-center justify-center w-10 shrink-0">
+                        <XCircle className="w-6 h-6 text-destructive" />
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <h3 className="font-semibold text-foreground truncate">
-                            {fitnessClass.name}
+                            {booking.className}
                           </h3>
                           <p className="text-sm text-muted-foreground truncate">
-                            {studio.name}
+                            {booking.studioName}
                           </p>
                         </div>
                         <Badge
-                          variant={
-                            booking.status === "completed"
-                              ? "secondary"
-                              : "destructive"
-                          }
+                          variant={booking.status === "completed" ? "secondary" : "destructive"}
                           className="shrink-0"
                         >
-                          {booking.status === "completed"
-                            ? "Completed"
-                            : "Cancelled"}
+                          {booking.status === "completed" ? "Completed" : "Cancelled"}
                         </Badge>
                       </div>
                       <div className="flex items-center justify-between mt-2">
-                        <span className="text-xs text-muted-foreground">
-                          {dateStr}
-                        </span>
-                        {booking.status === "completed" && (
-                          <Link href={`/studio/${studio.id}`}>
+                        <span className="text-xs text-muted-foreground">{dateStr}</span>
+                        {booking.status === "completed" && booking.studioId && (
+                          <Link href={`/studio/${booking.studioId}`}>
                             <Button variant="ghost" size="sm" className="h-7 text-xs">
                               Book Again
                               <ChevronRight className="w-3 h-3 ml-1" />

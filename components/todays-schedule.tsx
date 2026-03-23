@@ -1,13 +1,37 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ChevronRight, CalendarDays } from "lucide-react";
-import { classes } from "@/lib/data";
+import { classes as mockClasses } from "@/lib/data";
 import { ClassCard } from "@/components/class-card";
+import { searchClasses } from "@/lib/api/classes";
+import type { FitnessClass } from "@/lib/types";
 
 export function TodaysSchedule() {
-  // For demo, show all classes as "today's" schedule
-  const todaysClasses = classes.slice(0, 4);
+  const [displayClasses, setDisplayClasses] = useState<FitnessClass[]>(
+    mockClasses.slice(0, 4)
+  );
+
+  useEffect(() => {
+    const today = new Date();
+    const endOfDay = new Date(today);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    searchClasses({
+      dateFrom: today.toISOString(),
+      dateTo: endOfDay.toISOString(),
+      limit: 4,
+      sortBy: 'startTime',
+      availableOnly: true,
+    })
+      .then(({ classes }) => {
+        if (classes.length > 0) setDisplayClasses(classes);
+      })
+      .catch(() => {
+        // Keep mock data on error
+      });
+  }, []);
 
   return (
     <section className="py-4 sm:py-6 px-3 sm:px-4">
@@ -31,7 +55,7 @@ export function TodaysSchedule() {
       </div>
 
       <div className="space-y-2 sm:space-y-3">
-        {todaysClasses.map((fitnessClass) => (
+        {displayClasses.map((fitnessClass) => (
           <ClassCard
             key={fitnessClass.id}
             fitnessClass={fitnessClass}
